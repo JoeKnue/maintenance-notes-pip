@@ -80,33 +80,27 @@
       const i = pip.document.getElementById('i');
       const s = pip.document.getElementById('s');
 
-      async function save(val) {
-        if (!val) return;
-        s.textContent = 'Saving...';
-        try {
-          // Use form-data + no-cors so it works without CORS headaches
-          const fd = new FormData();
-          fd.append('rawInput', val);
-          fd.append('email', EMAIL);
-          await fetch(ENDPOINT, { method: 'POST', mode: 'no-cors', body: fd });
-          s.textContent = 'Saved ✔';
-          i.value = '';
-          setTimeout(() => s.textContent = '', 1000);
-        } catch (e) {
-          s.textContent = 'Error: ' + (e && e.message ? e.message : e);
-        }
-      }
-      i.addEventListener('keydown', e => { if (e.key === 'Enter') save(i.value.trim()); });
-      i.focus();
-      statusEl.innerHTML = '<span class="ok">PiP window opened.</span>';
-    } catch (e) {
-      statusEl.innerHTML = '<span class="err">PiP failed: ' + (e && e.message ? e.message : e) + '</span>';
-      console.error(e);
-    }
-  }
+      <script>
 
-  openBtn.addEventListener('click', openPiP);
+async function save(val) {
+  if (!val) return;
+  s.textContent = 'Saving...';
+  try {
+    const url = ENDPOINT
+      + '?rawInput=' + encodeURIComponent(val)
+      + '&email=' + encodeURIComponent(EMAIL)
+      + '&t=' + Date.now(); // cache-bust
+    // GET + no-cors is fine; backend doGet handles saving
+    await fetch(url, { method: 'GET', mode: 'no-cors' });
+    s.textContent = 'Saved ✔';
+    i.value = '';
+    setTimeout(() => s.textContent = '', 1000);
+  } catch (e) {
+    s.textContent = 'Error: ' + (e && e.message ? e.message : e);
+  }
+}
 </script>
+
 </body>
 </html>
 
