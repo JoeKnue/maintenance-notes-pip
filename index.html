@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Maintenance Notes – PiP Launcher</title>
+  <title>Maintenance Notes – PiP</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     body { font: 14px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
@@ -10,7 +10,6 @@
     .btn { padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; background:#f7f7f7; cursor:pointer; }
     input[type="text"] { padding:8px 10px; border:1px solid #ccc; border-radius:8px; min-width: 280px; }
     .ok { color:#0a7; } .err { color:#c00; } .muted{color:#666;font-size:12px}
-    .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12px}
   </style>
 </head>
 <body>
@@ -28,34 +27,15 @@
     <span id="status"></span>
   </div>
 
-  <hr>
-
-  <!-- Direct test (no PiP) to prove the endpoint & URL are correct -->
-  <div class="row">
-    <input id="testInput" type="text" placeholder="Test note (no PiP)" style="min-width:360px">
-    <button class="btn" onclick="MN_sendTest()">Send test (no PiP)</button>
-    <span id="testStatus"></span>
-  </div>
-
-  <div id="info" class="muted"></div>
-  <div class="muted mono" id="ep"></div>
-
 <script>
 (function () {
-  const ENDPOINT = "https://script.google.com/a/macros/flyzipline.com/s/AKfycbyGlhqRheRLiv6Bs_mwGh3tqTCXmqZre8BBj64jfzah5hB7u_0_HxEQrFNDpgKMLecu/exec"; // e.g., https://script.google.com/macros/s/AKfycb.../exec
+  const ENDPOINT = "https://script.google.com/a/macros/flyzipline.com/s/AKfycbyGlhqRheRLiv6Bs_mwGh3tqTCXmqZre8BBj64jfzah5hB7u_0_HxEQrFNDpgKMLecu/exec";
 
   const emailInput = document.getElementById('email');
   const openBtn = document.getElementById('open');
   const statusEl = document.getElementById('status');
-  const infoEl = document.getElementById('info');
-  const epEl = document.getElementById('ep');
-  epEl.textContent = 'Endpoint: ' + ENDPOINT;
 
-  const hasPiP = 'documentPictureInPicture' in window;
-  const secure = window.isSecureContext;
-  infoEl.textContent = 'PiP API: ' + (hasPiP ? 'available ✅' : 'missing ❌') + ' | Secure: ' + (secure ? 'yes ✅' : 'no ❌');
-
-  // Load saved email (or from ?email=)
+  // Load saved email (or ?email= from URL)
   const params = new URLSearchParams(location.search);
   const qEmail = params.get('email');
   if (qEmail) localStorage.setItem('mn_email', qEmail);
@@ -67,21 +47,20 @@
   }
   loadEmail();
 
-  // --- helpers used by both main page and PiP ---
+  // Helpers
   function buildUrl(note, email) {
     return ENDPOINT
       + '?rawInput=' + encodeURIComponent(note)
       + '&email=' + encodeURIComponent(email)
-      + '&t=' + Date.now(); // cache-buster
+      + '&t=' + Date.now();
   }
-
   async function sendGET(url) {
-    // Try fetch (no-cors), then a hidden Image() as a backup to guarantee the GET fires.
+    // Fire via fetch and Image as a belt-and-suspenders fallback
     try { await fetch(url, { method: 'GET', mode: 'no-cors', cache: 'no-store' }); } catch (_) {}
     try { const img = new Image(); img.src = url; } catch (_) {}
   }
 
-  // Make functions globally available for inline onclicks
+  // Expose for inline onclicks
   window.MN_saveEmail = function () {
     const e = emailInput.value.trim();
     if (!e || !e.includes('@')) { alert('Please enter a valid work email'); return; }
@@ -93,11 +72,12 @@
   window.MN_openPiP = async function () {
     const EMAIL = localStorage.getItem('mn_email') || '';
     if (!EMAIL) { alert('Please save your work email first.'); return; }
-    if (!('documentPictureInPicture' in window)) { statusEl.innerHTML = '<span class="err">Document PiP not supported in this browser.</span>'; return; }
-
+    if (!('documentPictureInPicture' in window)) {
+      statusEl.innerHTML = '<span class="err">Your browser doesn’t support Picture-in-Picture.</span>';
+      return;
+    }
     try {
       const pip = await documentPictureInPicture.requestWindow({ width: 360, height: 160 });
-      // Build the tiny UI inside the PiP window
       pip.document.body.innerHTML = `
         <style>
           body { margin: 8px; font: 13px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
@@ -122,31 +102,16 @@
         i.value = '';
         setTimeout(() => s.textContent = '', 1000);
       }
-
       i.addEventListener('keydown', e => { if (e.key === 'Enter') save(i.value.trim()); });
       i.focus();
-      statusEl.innerHTML = '<span class="ok">PiP window opened.</span>';
+      statusEl.innerHTML = '<span class="ok">PiP opened.</span>';
     } catch (e) {
       statusEl.innerHTML = '<span class="err">PiP failed: ' + (e && e.message ? e.message : e) + '</span>';
       console.error(e);
     }
   };
-
-  // Direct test (no PiP)
-  window.MN_sendTest = async function () {
-    const EMAIL = localStorage.getItem('mn_email') || '';
-    const input = document.getElementById('testInput');
-    const tStatus = document.getElementById('testStatus');
-    if (!EMAIL) { alert('Save your work email first.'); return; }
-    const note = input.value.trim() || 'launcher test';
-    tStatus.textContent = 'Sending...';
-    const url = buildUrl(note, EMAIL);
-    await sendGET(url);
-    tStatus.textContent = 'Sent ✔  (check the sheet)';
-    input.value = '';
-    setTimeout(() => tStatus.textContent = '', 1200);
-  };
 })();
 </script>
 </body>
 </html>
+
