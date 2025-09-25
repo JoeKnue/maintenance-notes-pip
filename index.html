@@ -1,0 +1,111 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Maintenance Notes – PiP Launcher</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font: 14px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
+    .row { display:flex; gap:10px; align-items:center; margin: 10px 0; }
+    .btn { padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; background:#f7f7f7; cursor:pointer; }
+    input[type="text"] { padding:8px 10px; border:1px solid #ccc; border-radius:8px; min-width: 280px; }
+    .ok { color:#0a7; } .err { color:#c00; } .muted{color:#666;font-size:12px}
+  </style>
+</head>
+<body>
+  <h3>Maintenance Notes – Picture-in-Picture</h3>
+
+  <div class="row">
+    <label for="email">Your work email:</label>
+    <input id="email" type="text" placeholder="you@company.com">
+    <button class="btn" id="saveEmail">Save email</button>
+  </div>
+  <div class="muted">Saved locally in your browser so each note is tagged with you.</div>
+
+  <div class="row">
+    <button class="btn" id="open" disabled>Open PiP</button>
+    <span id="status"></span>
+  </div>
+
+  <div id="info" class="muted"></div>
+
+<script>
+  // 1) PUT YOUR APPS SCRIPT /exec URL HERE:
+  const ENDPOINT = "https://script.google.com/a/macros/flyzipline.com/s/AKfycbyGlhqRheRLiv6Bs_mwGh3tqTCXmqZre8BBj64jfzah5hB7u_0_HxEQrFNDpgKMLecu/exec"; // e.g., https://script.google.com/macros/s/AKfycb.../exec
+
+  const emailInput = document.getElementById('email');
+  const saveEmailBtn = document.getElementById('saveEmail');
+  const openBtn = document.getElementById('open');
+  const statusEl = document.getElementById('status');
+  const infoEl = document.getElementById('info');
+
+  function loadEmail() {
+    const e = localStorage.getItem('mn_email') || '';
+    emailInput.value = e;
+    openBtn.disabled = !e;
+  }
+  loadEmail();
+
+  saveEmailBtn.onclick = () => {
+    const e = emailInput.value.trim();
+    if (!e || !e.includes('@')) { alert('Please enter a valid work email'); return; }
+    localStorage.setItem('mn_email', e);
+    openBtn.disabled = false;
+    statusEl.textContent = 'Email saved.';
+  };
+
+  const hasPiP = 'documentPictureInPicture' in window;
+  const secure = window.isSecureContext;
+  infoEl.textContent = 'PiP API: ' + (hasPiP ? 'available ✅' : 'missing ❌') + ' | Secure: ' + (secure ? 'yes ✅' : 'no ❌');
+
+  async function openPiP() {
+    const EMAIL = localStorage.getItem('mn_email') || '';
+    if (!EMAIL) { alert('Please save your work email first.'); return; }
+    if (!hasPiP) { statusEl.innerHTML = '<span class="err">Document PiP not supported in this browser.</span>'; return; }
+
+    try {
+      const pip = await documentPictureInPicture.requestWindow({ width: 360, height: 160 });
+      pip.document.body.innerHTML = `
+        <style>
+          body { margin: 8px; font: 13px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+          .t { font-weight: 800; margin-bottom: 6px; }
+          .row { display:flex; gap:6px; }
+          input { flex:1; padding:6px 8px; border:1px solid #bbb; border-radius:8px; }
+          .s { font-size:12px; min-height:18px; margin-top:6px; }
+        </style>
+        <div class="t">Maintenance Notes</div>
+        <div class="row"><input id="i" placeholder="Dallas / ZIP-0123: missing dock nut..." /></div>
+        <div id="s" class="s"></div>
+      `;
+      const i = pip.document.getElementById('i');
+      const s = pip.document.getElementById('s');
+
+      async function save(val) {
+        if (!val) return;
+        s.textContent = 'Saving...';
+        try {
+          // Use form-data + no-cors so it works without CORS headaches
+          const fd = new FormData();
+          fd.append('rawInput', val);
+          fd.append('email', EMAIL);
+          await fetch(ENDPOINT, { method: 'POST', mode: 'no-cors', body: fd });
+          s.textContent = 'Saved ✔';
+          i.value = '';
+          setTimeout(() => s.textContent = '', 1000);
+        } catch (e) {
+          s.textContent = 'Error: ' + (e && e.message ? e.message : e);
+        }
+      }
+      i.addEventListener('keydown', e => { if (e.key === 'Enter') save(i.value.trim()); });
+      i.focus();
+      statusEl.innerHTML = '<span class="ok">PiP window opened.</span>';
+    } catch (e) {
+      statusEl.innerHTML = '<span class="err">PiP failed: ' + (e && e.message ? e.message : e) + '</span>';
+      console.error(e);
+    }
+  }
+
+  openBtn.addEventListener('click', openPiP);
+</script>
+</body>
+</html>
