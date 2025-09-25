@@ -18,26 +18,37 @@
   <div class="row">
     <label for="email">Your work email:</label>
     <input id="email" type="text" placeholder="you@company.com">
-    <button class="btn" id="saveEmail">Save email</button>
+    <!-- Inline onclick to guarantee it fires -->
+    <button class="btn" id="saveEmail" onclick="MN_saveEmail()">Save email</button>
   </div>
   <div class="muted">Saved locally in your browser so each note is tagged with you.</div>
 
   <div class="row">
-    <button class="btn" id="open" disabled>Open PiP</button>
+    <!-- Inline onclick to guarantee it fires -->
+    <button class="btn" id="open" onclick="MN_openPiP()" disabled>Open PiP</button>
     <span id="status"></span>
   </div>
 
   <div id="info" class="muted"></div>
 
 <script>
-  // >>>> REPLACE THIS WITH YOUR APPS SCRIPT /exec URL <<<<
+(function () {
   const ENDPOINT = "https://script.google.com/a/macros/flyzipline.com/s/AKfycbyGlhqRheRLiv6Bs_mwGh3tqTCXmqZre8BBj64jfzah5hB7u_0_HxEQrFNDpgKMLecu/exec"; // e.g., https://script.google.com/macros/s/AKfycb.../exec
 
   const emailInput = document.getElementById('email');
-  const saveEmailBtn = document.getElementById('saveEmail');
   const openBtn = document.getElementById('open');
   const statusEl = document.getElementById('status');
   const infoEl = document.getElementById('info');
+
+  // Show environment info
+  const hasPiP = 'documentPictureInPicture' in window;
+  const secure = window.isSecureContext;
+  infoEl.textContent = 'PiP API: ' + (hasPiP ? 'available ✅' : 'missing ❌') + ' | Secure: ' + (secure ? 'yes ✅' : 'no ❌');
+
+  // Load saved email (or from ?email=)
+  const params = new URLSearchParams(location.search);
+  const qEmail = params.get('email');
+  if (qEmail) localStorage.setItem('mn_email', qEmail);
 
   function loadEmail() {
     const e = localStorage.getItem('mn_email') || '';
@@ -46,7 +57,8 @@
   }
   loadEmail();
 
-  saveEmailBtn.onclick = () => {
+  // Make functions globally available for the inline onclicks
+  window.MN_saveEmail = function () {
     const e = emailInput.value.trim();
     if (!e || !e.includes('@')) { alert('Please enter a valid work email'); return; }
     localStorage.setItem('mn_email', e);
@@ -54,17 +66,14 @@
     statusEl.textContent = 'Email saved.';
   };
 
-  const hasPiP = 'documentPictureInPicture' in window;
-  const secure = window.isSecureContext;
-  infoEl.textContent = 'PiP API: ' + (hasPiP ? 'available ✅' : 'missing ❌') + ' | Secure: ' + (secure ? 'yes ✅' : 'no ❌');
-
-  async function openPiP() {
+  window.MN_openPiP = async function () {
     const EMAIL = localStorage.getItem('mn_email') || '';
     if (!EMAIL) { alert('Please save your work email first.'); return; }
-    if (!hasPiP) { statusEl.innerHTML = '<span class="err">Document PiP not supported in this browser.</span>'; return; }
+    if (!('documentPictureInPicture' in window)) { statusEl.innerHTML = '<span class="err">Document PiP not supported in this browser.</span>'; return; }
 
     try {
       const pip = await documentPictureInPicture.requestWindow({ width: 360, height: 160 });
+      // Build the tiny UI inside the PiP window
       pip.document.body.innerHTML = `
         <style>
           body { margin: 8px; font: 13px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
@@ -80,27 +89,35 @@
       const i = pip.document.getElementById('i');
       const s = pip.document.getElementById('s');
 
-      <script>
+      async function save(val) {
+        if (!val) return;
+        s.textContent = 'Saving...';
+        try {
+          // Use GET to avoid any CORS issues – the Apps Script doGet() saves.
+          const url = ENDPOINT
+            + '?rawInput=' + encodeURIComponent(val)
+            + '&email=' + encodeURIComponent(EMAIL)
+            + '&t=' + Date.now(); // cache-buster
+          // GET request; 'no-cors' keeps it quiet but reliable
+          await fetch(url, { method: 'GET', mode: 'no-cors' });
+          s.textContent = 'Saved ✔';
+          i.value = '';
+          setTimeout(() => s.textContent = '', 1000);
+        } catch (e) {
+          s.textContent = 'Error: ' + (e && e.message ? e.message : e);
+        }
+      }
 
-async function save(val) {
-  if (!val) return;
-  s.textContent = 'Saving...';
-  try {
-    const url = ENDPOINT
-      + '?rawInput=' + encodeURIComponent(val)
-      + '&email=' + encodeURIComponent(EMAIL)
-      + '&t=' + Date.now(); // cache-bust
-    // GET + no-cors is fine; backend doGet handles saving
-    await fetch(url, { method: 'GET', mode: 'no-cors' });
-    s.textContent = 'Saved ✔';
-    i.value = '';
-    setTimeout(() => s.textContent = '', 1000);
-  } catch (e) {
-    s.textContent = 'Error: ' + (e && e.message ? e.message : e);
-  }
-}
+      i.addEventListener('keydown', e => { if (e.key === 'Enter') save(i.value.trim()); });
+      i.focus();
+      statusEl.innerHTML = '<span class="ok">PiP window opened.</span>';
+    } catch (e) {
+      statusEl.innerHTML = '<span class="err">PiP failed: ' + (e && e.message ? e.message : e) + '</span>';
+      console.error(e);
+    }
+  };
+})();
 </script>
-
 </body>
 </html>
 
