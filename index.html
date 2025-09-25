@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     body { font: 14px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
-    .row { display:flex; gap:10px; align-items:center; margin: 10px 0; }
+    .row { display:flex; gap:10px; align-items:center; margin: 10px 0; flex-wrap: wrap; }
     .btn { padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; background:#f7f7f7; cursor:pointer; }
     input[type="text"] { padding:8px 10px; border:1px solid #ccc; border-radius:8px; min-width: 280px; }
     .ok { color:#0a7; } .err { color:#c00; } .muted{color:#666;font-size:12px}
@@ -30,7 +30,7 @@
   <div id="info" class="muted"></div>
 
 <script>
-  // 1) PUT YOUR APPS SCRIPT /exec URL HERE:
+  // >>>> REPLACE THIS WITH YOUR APPS SCRIPT /exec URL <<<<
   const ENDPOINT = "https://script.google.com/a/macros/flyzipline.com/s/AKfycbyGlhqRheRLiv6Bs_mwGh3tqTCXmqZre8BBj64jfzah5hB7u_0_HxEQrFNDpgKMLecu/exec"; // e.g., https://script.google.com/macros/s/AKfycb.../exec
 
   const emailInput = document.getElementById('email');
@@ -109,3 +109,4 @@
 </script>
 </body>
 </html>
+
