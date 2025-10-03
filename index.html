@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Maintenance Notes – PiP</title>
+  <title>Maintenance Notes – PiP (diag)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     body { font: 14px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
@@ -10,6 +10,7 @@
     .btn { padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; background:#f7f7f7; cursor:pointer; }
     input[type="text"] { padding:8px 10px; border:1px solid #ccc; border-radius:8px; min-width: 280px; }
     .ok { color:#0a7; } .err { color:#c00; } .muted{color:#666;font-size:12px}
+    .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12px}
   </style>
 </head>
 <body>
@@ -27,21 +28,33 @@
     <span id="status"></span>
   </div>
 
-  <div class="muted" id="ver"></div>
+  <hr>
+
+  <!-- Diagnostics: show endpoint + simple test send -->
+  <div class="row">
+    <input id="testInput" type="text" placeholder="Test note (no PiP)" style="min-width:360px">
+    <button class="btn" onclick="MN_sendTest()">Send test (no PiP)</button>
+    <a class="btn" id="openGet" target="_blank" rel="noopener">Open raw save URL</a>
+    <span id="testStatus"></span>
+  </div>
+  <div class="muted mono" id="ep"></div>
 
 <script>
 (function () {
-  // >>>> PASTE YOUR CURRENT Apps Script /exec URL <<<<
-  const ENDPOINT = "https://script.google.com/a/macros/flyzipline.com/s/AKfycbyGlhqRheRLiv6Bs_mwGh3tqTCXmqZre8BBj64jfzah5hB7u_0_HxEQrFNDpgKMLecu/exec";
-  // >>>> PASTE YOUR Google Sheet URL (open it, copy from address bar) <<<<
+  const ENDPOINT = "Yhttps://script.google.com/a/macros/flyzipline.com/s/AKfycbyGlhqRheRLiv6Bs_mwGh3tqTCXmqZre8BBj64jfzah5hB7u_0_HxEQrFNDpgKMLecu/exec";
+ 
   const LOG_URL = "https://docs.google.com/spreadsheets/d/1AhwogW4ui3CJdduNEjIcSReC2Y7ZcMUZyxATad0XGVo/edit?usp=sharing";
-  const VERSION = "PiP-photos+log v1";
 
-  document.getElementById('ver').textContent = VERSION;
+  // Show endpoint on page so we can visually confirm it's correct
+  const epEl = document.getElementById('ep');
+  epEl.textContent = 'Endpoint: ' + ENDPOINT;
 
   const emailInput = document.getElementById('email');
   const openBtn = document.getElementById('open');
   const statusEl = document.getElementById('status');
+  const testInput = document.getElementById('testInput');
+  const testStatus = document.getElementById('testStatus');
+  const openGetLink = document.getElementById('openGet');
 
   // Load saved email (or ?email=)
   const params = new URLSearchParams(location.search);
@@ -74,6 +87,20 @@
     localStorage.setItem('mn_email', e);
     openBtn.disabled = false;
     statusEl.textContent = 'Email saved.';
+  };
+
+  // Direct test (no PiP)
+  window.MN_sendTest = async function () {
+    const EMAIL = localStorage.getItem('mn_email') || '';
+    if (!EMAIL) { alert('Save your work email first.'); return; }
+    const note = testInput.value.trim() || 'launcher test';
+    const url = buildUrl(note, EMAIL);
+    openGetLink.href = url; // so you can click and see "Saved:" in a new tab
+    testStatus.textContent = 'Sending...';
+    await sendGET(url);
+    testStatus.textContent = 'Sent ✔  (check the sheet)';
+    testInput.value = '';
+    setTimeout(() => testStatus.textContent = '', 1200);
   };
 
   // Image -> base64 (resized) helper
@@ -110,7 +137,7 @@
       return;
     }
     try {
-      const pip = await documentPictureInPicture.requestWindow({ width: 380, height: 230 });
+      const pip = await documentPictureInPicture.requestWindow({ width: 380, height: 240 });
       pip.document.body.innerHTML = `
         <style>
           body { margin: 8px; font: 13px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
@@ -124,7 +151,7 @@
         </style>
         <div class="t">Maintenance Notes</div>
         <div class="row">
-          <input id="i" type="text" placeholder="Kaufman / tower-1: Need the bleed valve to lower tower" />
+          <input id="i" type="text" placeholder="Dallas / ZIP-0123: missing dock nut..." />
         </div>
         <div class="row">
           <input id="f" type="file" accept="image/*" />
@@ -157,16 +184,16 @@
         s.textContent = 'Saving...';
         try {
           if (pendingBase64) {
-            const payload = { rawInput: val, email: EMAIL, imageBase64: pendingBase64 };
-            await fetch(ENDPOINT, {
-              method: 'POST',
-              mode: 'no-cors',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload)
-            });
+            // POST via FormData (avoids CORS preflight issues)
+            const fd = new FormData();
+            fd.append('rawInput', val);
+            fd.append('email', EMAIL);
+            fd.append('imageBase64', pendingBase64);
+            await fetch(ENDPOINT, { method: 'POST', mode: 'no-cors', body: fd });
           } else {
+            // Text-only: simple GET
             const url = buildUrl(val, EMAIL);
-            await fetch(url, { method: 'GET', mode: 'no-cors', cache: 'no-store' });
+            await sendGET(url);
           }
           s.textContent = 'Saved ✔';
           i.value = '';
