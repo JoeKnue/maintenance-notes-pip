@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Maintenance Notes – PiP (diag)</title>
+  <title>Maintenance Notes – PiP</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     body { font: 14px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
@@ -10,7 +10,6 @@
     .btn { padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; background:#f7f7f7; cursor:pointer; }
     input[type="text"] { padding:8px 10px; border:1px solid #ccc; border-radius:8px; min-width: 280px; }
     .ok { color:#0a7; } .err { color:#c00; } .muted{color:#666;font-size:12px}
-    .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12px}
   </style>
 </head>
 <body>
@@ -28,33 +27,14 @@
     <span id="status"></span>
   </div>
 
-  <hr>
-
-  <!-- Diagnostics: show endpoint + simple test send -->
-  <div class="row">
-    <input id="testInput" type="text" placeholder="Test note (no PiP)" style="min-width:360px">
-    <button class="btn" onclick="MN_sendTest()">Send test (no PiP)</button>
-    <a class="btn" id="openGet" target="_blank" rel="noopener">Open raw save URL</a>
-    <span id="testStatus"></span>
-  </div>
-  <div class="muted mono" id="ep"></div>
-
 <script>
 (function () {
-  const ENDPOINT = "https://script.google.com/a/macros/flyzipline.com/s/AKfycbyGlhqRheRLiv6Bs_mwGh3tqTCXmqZre8BBj64jfzah5hB7u_0_HxEQrFNDpgKMLecu/exec";
- 
-  const LOG_URL = "https://docs.google.com/spreadsheets/d/1AhwogW4ui3CJdduNEjIcSReC2Y7ZcMUZyxATad0XGVo/edit?usp=sharing";
-
-  // Show endpoint on page so we can visually confirm it's correct
-  const epEl = document.getElementById('ep');
-  epEl.textContent = 'Endpoint: ' + ENDPOINT;
+  const ENDPOINT = "https://script.google.com/a/macros/flyzipline.com/s/AKfycbyGlhqRheRLiv6Bs_mwGh3tqTCXmqZre8BBj64jfzah5hB7u_0_HxEQrFNDpgKMLecu/exec";  
+  const LOG_URL  = "https://docs.google.com/spreadsheets/d/1AhwogW4ui3CJdduNEjIcSReC2Y7ZcMUZyxATad0XGVo/edit?usp=sharing";        
 
   const emailInput = document.getElementById('email');
   const openBtn = document.getElementById('open');
   const statusEl = document.getElementById('status');
-  const testInput = document.getElementById('testInput');
-  const testStatus = document.getElementById('testStatus');
-  const openGetLink = document.getElementById('openGet');
 
   // Load saved email (or ?email=)
   const params = new URLSearchParams(location.search);
@@ -69,18 +49,34 @@
   loadEmail();
 
   // Helpers
-  function buildUrl(note, email) {
-    return ENDPOINT
-      + '?rawInput=' + encodeURIComponent(note)
-      + '&email=' + encodeURIComponent(email)
-      + '&t=' + Date.now();
+  function buildGET(note, email, noteId) {
+    const u = new URL(ENDPOINT);
+    u.searchParams.set('rawInput', note);
+    u.searchParams.set('email', email);
+    if (noteId) u.searchParams.set('noteId', noteId);
+    u.searchParams.set('t', Date.now());
+    return u.toString();
   }
-  async function sendGET(url) {
+  async function fireGET(url) {
     try { await fetch(url, { method: 'GET', mode: 'no-cors', cache: 'no-store' }); } catch (_) {}
     try { const img = new Image(); img.src = url; } catch (_) {}
   }
+  async function imageToBase64(file, maxDim=1280, quality=0.8) {
+    const dataUrl = await new Promise((resolve, reject) => {
+      const fr = new FileReader(); fr.onload = () => resolve(fr.result); fr.onerror = reject; fr.readAsDataURL(file);
+    });
+    const img = await new Promise((resolve, reject) => {
+      const im = new Image(); im.onload = () => resolve(im); im.onerror = reject; im.src = dataUrl;
+    });
+    let { width, height } = img;
+    if (width > height && width > maxDim) { height = Math.round(height * (maxDim / width)); width = maxDim; }
+    else if (height > width && height > maxDim) { width = Math.round(width * (maxDim / height)); height = maxDim; }
+    else if (width === height && width > maxDim) { width = height = maxDim; }
+    const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
+    const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, width, height);
+    return canvas.toDataURL('image/jpeg', quality);
+  }
 
-  // Email save
   window.MN_saveEmail = function () {
     const e = emailInput.value.trim();
     if (!e || !e.includes('@')) { alert('Please enter a valid work email'); return; }
@@ -89,46 +85,6 @@
     statusEl.textContent = 'Email saved.';
   };
 
-  // Direct test (no PiP)
-  window.MN_sendTest = async function () {
-    const EMAIL = localStorage.getItem('mn_email') || '';
-    if (!EMAIL) { alert('Save your work email first.'); return; }
-    const note = testInput.value.trim() || 'launcher test';
-    const url = buildUrl(note, EMAIL);
-    openGetLink.href = url; // so you can click and see "Saved:" in a new tab
-    testStatus.textContent = 'Sending...';
-    await sendGET(url);
-    testStatus.textContent = 'Sent ✔  (check the sheet)';
-    testInput.value = '';
-    setTimeout(() => testStatus.textContent = '', 1200);
-  };
-
-  // Image -> base64 (resized) helper
-  async function imageToBase64(file, maxDim=1280, quality=0.8) {
-    const dataUrl = await new Promise((resolve, reject) => {
-      const fr = new FileReader();
-      fr.onload = () => resolve(fr.result);
-      fr.onerror = reject;
-      fr.readAsDataURL(file);
-    });
-    const img = await new Promise((resolve, reject) => {
-      const im = new Image();
-      im.onload = () => resolve(im);
-      im.onerror = reject;
-      im.src = dataUrl;
-    });
-    const canvas = document.createElement('canvas');
-    let { width, height } = img;
-    if (width > height && width > maxDim) { height = Math.round(height * (maxDim / width)); width = maxDim; }
-    else if (height > width && height > maxDim) { width = Math.round(width * (maxDim / height)); height = maxDim; }
-    else if (width === height && width > maxDim) { width = height = maxDim; }
-    canvas.width = width; canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0, width, height);
-    return canvas.toDataURL('image/jpeg', quality); // "data:image/jpeg;base64,..."
-  }
-
-  // Open PiP with link + photo support
   window.MN_openPiP = async function () {
     const EMAIL = localStorage.getItem('mn_email') || '';
     if (!EMAIL) { alert('Please save your work email first.'); return; }
@@ -150,13 +106,8 @@
           a:hover { text-decoration:underline; }
         </style>
         <div class="t">Maintenance Notes</div>
-        <div class="row">
-          <input id="i" type="text" placeholder="Dallas / ZIP-0123: missing dock nut..." />
-        </div>
-        <div class="row">
-          <input id="f" type="file" accept="image/*" />
-          <span id="fstatus" class="s"></span>
-        </div>
+        <div class="row"><input id="i" type="text" placeholder="Kaufman / Tower-1: Need the bleed valve to raise tower." /></div>
+        <div class="row"><input id="f" type="file" accept="image/*" /><span id="fstatus" class="s"></span></div>
         <div id="s" class="s"></div>
         <div class="footer"><a href="${LOG_URL}" target="_blank">Maintenance Notes Log</a></div>
       `;
@@ -164,8 +115,8 @@
       const s = pip.document.getElementById('s');
       const f = pip.document.getElementById('f');
       const fstatus = pip.document.getElementById('fstatus');
-
       let pendingBase64 = '';
+
       f.addEventListener('change', async () => {
         const file = f.files && f.files[0];
         if (!file) { pendingBase64 = ''; fstatus.textContent = ''; return; }
@@ -182,24 +133,33 @@
       async function save(val) {
         if (!val) return;
         s.textContent = 'Saving...';
+
+        // Generate a shared noteId so the POST can attach to the GET row
+        const noteId = 'n' + Date.now().toString(36) + Math.random().toString(36).slice(2,8);
+
         try {
+          // 1) Always write the text row first (reliable GET)
+          const textUrl = buildGET(val, EMAIL, noteId);
+          await fireGET(textUrl);
+
+          // 2) If there is a photo, POST it with the same noteId to attach it
           if (pendingBase64) {
-            // POST via FormData (avoids CORS preflight issues)
-            const fd = new FormData();
-            fd.append('rawInput', val);
-            fd.append('email', EMAIL);
-            fd.append('imageBase64', pendingBase64);
-            await fetch(ENDPOINT, { method: 'POST', mode: 'no-cors', body: fd });
-          } else {
-            // Text-only: simple GET
-            const url = buildUrl(val, EMAIL);
-            await sendGET(url);
+            const body = new URLSearchParams();
+            body.set('rawInput', val);     // optional
+            body.set('email', EMAIL);
+            body.set('noteId', noteId);
+            body.set('imageBase64', pendingBase64);
+            // x-www-form-urlencoded keeps this a simple request
+            fetch(ENDPOINT, {
+              method: 'POST',
+              mode: 'no-cors',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+              body: body.toString()
+            });
           }
+
           s.textContent = 'Saved ✔';
-          i.value = '';
-          f.value = '';
-          pendingBase64 = '';
-          fstatus.textContent = '';
+          i.value = ''; f.value=''; pendingBase64=''; fstatus.textContent='';
           setTimeout(() => s.textContent = '', 1000);
         } catch (e) {
           s.textContent = 'Error: ' + (e && e.message ? e.message : e);
