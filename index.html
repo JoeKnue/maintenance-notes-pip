@@ -27,15 +27,23 @@
     <span id="status"></span>
   </div>
 
+  <div class="muted" id="ver"></div>
+
 <script>
 (function () {
+  // >>>> PASTE YOUR CURRENT Apps Script /exec URL <<<<
   const ENDPOINT = "https://script.google.com/a/macros/flyzipline.com/s/AKfycbyGlhqRheRLiv6Bs_mwGh3tqTCXmqZre8BBj64jfzah5hB7u_0_HxEQrFNDpgKMLecu/exec";
+  // >>>> PASTE YOUR Google Sheet URL (open it, copy from address bar) <<<<
+  const LOG_URL = "https://docs.google.com/spreadsheets/d/1AhwogW4ui3CJdduNEjIcSReC2Y7ZcMUZyxATad0XGVo/edit?usp=sharing";
+  const VERSION = "PiP-photos+log v1";
+
+  document.getElementById('ver').textContent = VERSION;
 
   const emailInput = document.getElementById('email');
   const openBtn = document.getElementById('open');
   const statusEl = document.getElementById('status');
 
-  // Load saved email (or ?email= from URL)
+  // Load saved email (or ?email=)
   const params = new URLSearchParams(location.search);
   const qEmail = params.get('email');
   if (qEmail) localStorage.setItem('mn_email', qEmail);
@@ -55,12 +63,11 @@
       + '&t=' + Date.now();
   }
   async function sendGET(url) {
-    // Fire via fetch and Image as a belt-and-suspenders fallback
     try { await fetch(url, { method: 'GET', mode: 'no-cors', cache: 'no-store' }); } catch (_) {}
     try { const img = new Image(); img.src = url; } catch (_) {}
   }
 
-  // Expose for inline onclicks
+  // Email save
   window.MN_saveEmail = function () {
     const e = emailInput.value.trim();
     if (!e || !e.includes('@')) { alert('Please enter a valid work email'); return; }
@@ -69,6 +76,32 @@
     statusEl.textContent = 'Email saved.';
   };
 
+  // Image -> base64 (resized) helper
+  async function imageToBase64(file, maxDim=1280, quality=0.8) {
+    const dataUrl = await new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(fr.result);
+      fr.onerror = reject;
+      fr.readAsDataURL(file);
+    });
+    const img = await new Promise((resolve, reject) => {
+      const im = new Image();
+      im.onload = () => resolve(im);
+      im.onerror = reject;
+      im.src = dataUrl;
+    });
+    const canvas = document.createElement('canvas');
+    let { width, height } = img;
+    if (width > height && width > maxDim) { height = Math.round(height * (maxDim / width)); width = maxDim; }
+    else if (height > width && height > maxDim) { width = Math.round(width * (maxDim / height)); height = maxDim; }
+    else if (width === height && width > maxDim) { width = height = maxDim; }
+    canvas.width = width; canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, width, height);
+    return canvas.toDataURL('image/jpeg', quality); // "data:image/jpeg;base64,..."
+  }
+
+  // Open PiP with link + photo support
   window.MN_openPiP = async function () {
     const EMAIL = localStorage.getItem('mn_email') || '';
     if (!EMAIL) { alert('Please save your work email first.'); return; }
@@ -77,31 +110,75 @@
       return;
     }
     try {
-      const pip = await documentPictureInPicture.requestWindow({ width: 360, height: 160 });
+      const pip = await documentPictureInPicture.requestWindow({ width: 380, height: 230 });
       pip.document.body.innerHTML = `
         <style>
           body { margin: 8px; font: 13px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
           .t { font-weight: 800; margin-bottom: 6px; }
-          .row { display:flex; gap:6px; }
-          input { flex:1; padding:6px 8px; border:1px solid #bbb; border-radius:8px; }
+          .row { display:flex; gap:6px; align-items:center; }
+          input[type="text"] { flex:1; padding:6px 8px; border:1px solid #bbb; border-radius:8px; }
           .s { font-size:12px; min-height:18px; margin-top:6px; }
+          .footer { margin-top:8px; }
+          a { color:#06c; text-decoration:none; }
+          a:hover { text-decoration:underline; }
         </style>
         <div class="t">Maintenance Notes</div>
-        <div class="row"><input id="i" placeholder="2427 / tower-100: Need the bleed valve tool to raise tower" /></div>
+        <div class="row">
+          <input id="i" type="text" placeholder="Dallas / ZIP-0123: missing dock nut..." />
+        </div>
+        <div class="row">
+          <input id="f" type="file" accept="image/*" />
+          <span id="fstatus" class="s"></span>
+        </div>
         <div id="s" class="s"></div>
+        <div class="footer"><a href="${LOG_URL}" target="_blank">Maintenance Notes Log</a></div>
       `;
       const i = pip.document.getElementById('i');
       const s = pip.document.getElementById('s');
+      const f = pip.document.getElementById('f');
+      const fstatus = pip.document.getElementById('fstatus');
+
+      let pendingBase64 = '';
+      f.addEventListener('change', async () => {
+        const file = f.files && f.files[0];
+        if (!file) { pendingBase64 = ''; fstatus.textContent = ''; return; }
+        fstatus.textContent = 'Processing photo...';
+        try {
+          pendingBase64 = await imageToBase64(file, 1280, 0.8);
+          fstatus.textContent = 'Photo ready ✔';
+        } catch (e) {
+          pendingBase64 = '';
+          fstatus.textContent = 'Photo error';
+        }
+      });
 
       async function save(val) {
         if (!val) return;
         s.textContent = 'Saving...';
-        const url = buildUrl(val, EMAIL);
-        await sendGET(url);
-        s.textContent = 'Saved ✔';
-        i.value = '';
-        setTimeout(() => s.textContent = '', 1000);
+        try {
+          if (pendingBase64) {
+            const payload = { rawInput: val, email: EMAIL, imageBase64: pendingBase64 };
+            await fetch(ENDPOINT, {
+              method: 'POST',
+              mode: 'no-cors',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+          } else {
+            const url = buildUrl(val, EMAIL);
+            await fetch(url, { method: 'GET', mode: 'no-cors', cache: 'no-store' });
+          }
+          s.textContent = 'Saved ✔';
+          i.value = '';
+          f.value = '';
+          pendingBase64 = '';
+          fstatus.textContent = '';
+          setTimeout(() => s.textContent = '', 1000);
+        } catch (e) {
+          s.textContent = 'Error: ' + (e && e.message ? e.message : e);
+        }
       }
+
       i.addEventListener('keydown', e => { if (e.key === 'Enter') save(i.value.trim()); });
       i.focus();
       statusEl.innerHTML = '<span class="ok">PiP opened.</span>';
@@ -114,4 +191,3 @@
 </script>
 </body>
 </html>
-
