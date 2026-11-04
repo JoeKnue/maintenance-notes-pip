@@ -1,204 +1,211 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Maintenance Notes – PiP</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <title>Maintenance Notes – PiP</title>
   <style>
-    body { font: 14px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
-    .row { display:flex; gap:10px; align-items:center; margin: 10px 0; flex-wrap: wrap; }
-    .btn { padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; background:#f7f7f7; cursor:pointer; }
-    input[type="text"] { padding:8px 10px; border:1px solid #ccc; border-radius:8px; min-width: 280px; }
-    .ok { color:#0a7; } .err { color:#c00; } .muted{color:#666;font-size:12px}
+    :root { color-scheme: light; font: 14px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { margin: 24px; color: #1f2937; }
+    h1 { margin: 0 0 18px; font-size: 1.25rem; }
+    .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 12px 0; }
+    label { font-weight: 600; }
+    input[type="email"] { min-width: 280px; padding: 8px 10px; border-radius: 8px; font: inherit; }
+    .btn { padding: 8px 12px; border: 1px solid #c8cdd4; border-radius: 8px; background: #f7f8fa; color: inherit; font: inherit; cursor: pointer; }
+    .btn:disabled { cursor: not-allowed; opacity: .55; }
+    .muted { color: #667085; font-size: 12px; }
+    .status { min-height: 1.25em; }
+    .ok { color: #087443; }
+    .err { color: #b42318; }
   </style>
 </head>
 <body>
-  <h3>Maintenance Notes – Picture-in-Picture</h3>
+  <main>
+    <h1>Maintenance Notes – Picture-in-Picture</h1>
+    <div class="row">
+      <label for="email">Your work email:</label>
+      <input id="email" type="email" autocomplete="email" placeholder="you@company.com">
+      <button class="btn" id="saveEmail" type="button">Save email</button>
+    </div>
+    <div class="muted">Saved locally in this browser so each submission is tagged with you.</div>
+    <div class="row">
+      <button class="btn" id="open" type="button" disabled>Open PiP</button>
+      <span id="status" class="status" role="status" aria-live="polite"></span>
+    </div>
+  </main>
 
-  <div class="row">
-    <label for="email">Your work email:</label>
-    <input id="email" type="text" placeholder="you@company.com">
-    <button class="btn" id="saveEmail" onclick="MN_saveEmail()">Save email</button>
-  </div>
-  <div class="muted">Saved locally in your browser so each note is tagged with you.</div>
+  <script>
+  (() => {
+    // Keep the existing deployment endpoint. The backend must be deployed before
+    // submissions can succeed. Update LOG_URL after the new Work_Log is created.
+    const ENDPOINT = 'https://script.google.com/a/macros/flyzipline.com/s/AKfycbyGlhqRheRLiv6Bs_mwGh3tqTCXmqZre8BBj64jfzah5hB7u_0_HxEQrFNDpgKMLecu/exec';
+    const LOG_URL = 'https://docs.google.com/spreadsheets/d/1BqsZaYJZdaaiwQZV9yx5zqtk45jYxl1R1-0V8166_J8/edit';
+    const EMAIL_KEY = 'mn_email';
+    const CATEGORIES = [
+      'Productive wrench time',
+      'Zip Retrieval / Preparation',
+      'Pack up/Driving between sites',
+      'No maintenance work available at site'
+    ];
 
-  <div class="row">
-    <button class="btn" id="open" onclick="MN_openPiP()" disabled>Open PiP</button>
-    <span id="status"></span>
-  </div>
+    const emailInput = document.getElementById('email');
+    const saveEmailButton = document.getElementById('saveEmail');
+    const openButton = document.getElementById('open');
+    const status = document.getElementById('status');
+    emailInput.value = localStorage.getItem(EMAIL_KEY) || '';
+    openButton.disabled = !emailInput.value.trim();
 
-<script>
-(function () {
-  const ENDPOINT = "https://script.google.com/a/macros/flyzipline.com/s/AKfycbyGlhqRheRLiv6Bs_mwGh3tqTCXmqZre8BBj64jfzah5hB7u_0_HxEQrFNDpgKMLecu/exec";
-  const LOG_URL  = "https://docs.google.com/spreadsheets/d/1AhwogW4ui3CJdduNEjIcSReC2Y7ZcMUZyxATad0XGVo/edit?usp=sharing";
-
-  const emailInput = document.getElementById('email');
-  const openBtn = document.getElementById('open');
-  const statusEl = document.getElementById('status');
-
-  // Load saved email (or ?email=)
-  const params = new URLSearchParams(location.search);
-  const qEmail = params.get('email');
-  if (qEmail) localStorage.setItem('mn_email', qEmail);
-  emailInput.value = localStorage.getItem('mn_email') || '';
-  openBtn.disabled = !emailInput.value;
-
-  window.MN_saveEmail = function () {
-    const e = emailInput.value.trim();
-    if (!e || !e.includes('@')) { alert('Please enter a valid work email'); return; }
-    localStorage.setItem('mn_email', e);
-    openBtn.disabled = false;
-    statusEl.textContent = 'Email saved.';
-  };
-
-  // Helpers
-  function buildGET(note, email, noteId) {
-    const u = new URL(ENDPOINT);
-    u.searchParams.set('rawInput', note);
-    u.searchParams.set('email', email);
-    if (noteId) u.searchParams.set('noteId', noteId);
-    u.searchParams.set('t', Date.now());
-    return u.toString();
-  }
-  async function fireGET(url) {
-    try { await fetch(url, { method: 'GET', mode: 'no-cors', cache: 'no-store' }); } catch (_) {}
-    try { const img = new Image(); img.src = url; } catch (_) {}
-  }
-  async function imageToBase64(file, maxDim=1280, quality=0.8) {
-    const dataUrl = await new Promise((resolve, reject) => {
-      const fr = new FileReader(); fr.onload = () => resolve(fr.result); fr.onerror = reject; fr.readAsDataURL(file);
+    saveEmailButton.addEventListener('click', () => {
+      const email = emailInput.value.trim();
+      if (!email || !emailInput.checkValidity()) {
+        status.className = 'status err';
+        status.textContent = 'Please enter a valid work email.';
+        emailInput.focus();
+        return;
+      }
+      localStorage.setItem(EMAIL_KEY, email);
+      openButton.disabled = false;
+      status.className = 'status ok';
+      status.textContent = 'Email saved.';
     });
-    const img = await new Promise((resolve, reject) => {
-      const im = new Image(); im.onload = () => resolve(im); im.onerror = reject; im.src = dataUrl;
-    });
-    let { width, height } = img;
-    if (width > height && width > maxDim) { height = Math.round(height * (maxDim / width)); width = maxDim; }
-    else if (height > width && height > maxDim) { width = Math.round(width * (maxDim / height)); height = maxDim; }
-    else if (width === height && width > maxDim) { width = height = maxDim; }
-    const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
-    const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, width, height);
-    return canvas.toDataURL('image/jpeg', quality);
-  }
 
-  window.MN_openPiP = async function () {
-    const EMAIL = localStorage.getItem('mn_email') || '';
-    if (!EMAIL) { alert('Please save your work email first.'); return; }
-    if (!('documentPictureInPicture' in window)) {
-      statusEl.innerHTML = '<span class="err">Your browser doesn’t support Picture-in-Picture.</span>';
-      return;
-    }
-    try {
-      const pip = await documentPictureInPicture.requestWindow({ width: 400, height: 260 });
-      pip.document.body.innerHTML = `
-        <style>
-          body { margin: 8px; font: 13px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
-          .t { font-weight: 800; margin-bottom: 6px; }
-          .row { display:flex; gap:6px; align-items:center; }
-          input[type="text"] { flex:1; padding:6px 8px; border:1px solid #bbb; border-radius:8px; }
-          .s { font-size:12px; min-height:18px; margin-top:6px; }
-          .footer { margin-top:8px; }
-          a { color:#06c; text-decoration:none; }
-          a:hover { text-decoration:underline; }
-          .btn { padding:6px 10px; border:1px solid #bbb; border-radius:8px; background:#f7f7f7; cursor:pointer; }
-        </style>
-        <div class="t">Maintenance Notes</div>
-        <div class="row">
-          <input id="i" type="text" placeholder="Kaufman / tower-1: Need the bleed valve to lower tower" />
-          <button id="saveBtn" class="btn" title="Enter or Ctrl/Cmd+Enter also saves">Save</button>
-        </div>
-        <div class="row">
-          <input id="f" type="file" accept="image/*" />
-          <span id="fstatus" class="s"></span>
-        </div>
-        <div id="s" class="s"></div>
-        <div class="footer"><a href="${LOG_URL}" target="_blank">Maintenance Notes Log</a></div>
-      `;
-
-      const i = pip.document.getElementById('i');
-      const s = pip.document.getElementById('s');
-      const f = pip.document.getElementById('f');
-      const fstatus = pip.document.getElementById('fstatus');
-      const saveBtn = pip.document.getElementById('saveBtn');
-
-      // keep chosen image in memory (base64, resized)
-      let pendingBase64 = '';
-
-      // After picking a file, process then return focus to text box so Enter works
-      f.addEventListener('change', async () => {
-        const file = f.files && f.files[0];
-        if (!file) { pendingBase64 = ''; fstatus.textContent = ''; i.focus(); return; }
-        fstatus.textContent = 'Processing photo...';
-        try {
-          pendingBase64 = await imageToBase64(file, 1280, 0.8);
-          fstatus.textContent = 'Photo ready ✔';
-        } catch (e) {
-          pendingBase64 = '';
-          fstatus.textContent = 'Photo error';
-        }
-        i.focus();
-      });
-
-      // Save handler (button, Enter in text, or Ctrl/Cmd+Enter anywhere)
-      async function save() {
-        const val = (i.value || '').trim();
-        if (!val) { s.textContent = 'Type a note first.'; return; }
-        s.textContent = 'Saving...';
-
-        // Shared noteId so POST can attach to the GET row
-        const noteId = 'n' + Date.now().toString(36) + Math.random().toString(36).slice(2,8);
-
-        try {
-          // 1) Always write the text row first (reliable GET)
-          const textUrl = buildGET(val, EMAIL, noteId);
-          await fireGET(textUrl);
-
-          // 2) If photo present, POST it with same noteId (retry once after 1.5s)
-          if (pendingBase64) {
-            const body = new URLSearchParams();
-            body.set('rawInput', val);
-            body.set('email', EMAIL);
-            body.set('noteId', noteId);
-            body.set('imageBase64', pendingBase64);
-
-            const sendPost = () => fetch(ENDPOINT, {
-              method: 'POST',
-              mode: 'no-cors',
-              headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
-              body: body.toString()
-            });
-
-            sendPost();
-            setTimeout(sendPost, 1500); // one retry
-          }
-
-          s.textContent = 'Saved ✔';
-          i.value = '';
-          f.value = '';
-          pendingBase64 = '';
-          fstatus.textContent = '';
-          setTimeout(() => s.textContent = '', 1000);
-          i.focus();
-        } catch (e) {
-          s.textContent = 'Error: ' + (e && e.message ? e.message : e);
-        }
+    openButton.addEventListener('click', async () => {
+      const email = (localStorage.getItem(EMAIL_KEY) || '').trim();
+      if (!email) {
+        status.className = 'status err';
+        status.textContent = 'Save your work email first.';
+        return;
+      }
+      if (!('documentPictureInPicture' in window)) {
+        status.className = 'status err';
+        status.textContent = 'This browser does not support Picture-in-Picture.';
+        return;
       }
 
-      saveBtn.addEventListener('click', (e) => { e.preventDefault(); save(); });
-      i.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') { e.preventDefault(); save(); }
-      });
-      pip.document.addEventListener('keydown', (e) => {
-        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); save(); }
-      });
+      try {
+        const pip = await documentPictureInPicture.requestWindow({ width: 390, height: 330 });
+        pip.document.body.innerHTML = `
+          <style>
+            :root { color-scheme: light; font: 13px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+            body { margin: 10px; color: #1f2937; }
+            .title { margin: 0 0 10px; font-size: 15px; font-weight: 750; }
+            label { display: block; margin: 0 0 4px; font-weight: 650; }
+            select, input[type="text"] { box-sizing: border-box; width: 100%; padding: 7px 8px; border: 1px solid #b9c0c9; border-radius: 7px; background: white; color: inherit; font: inherit; }
+            select { margin-bottom: 8px; }
+            input[type="text"] { margin-bottom: 8px; }
+            .save { width: 100%; padding: 7px 10px; border: 1px solid #98a2b3; border-radius: 7px; background: #e9eef5; color: #101828; font: inherit; font-weight: 700; cursor: pointer; }
+            .save:disabled { cursor: wait; opacity: .6; }
+            .status { min-height: 16px; margin-top: 5px; font-size: 12px; }
+            .error { color: #b42318; }
+            .success { color: #087443; }
+            .footer { margin-top: 7px; font-size: 12px; }
+            a { color: #175cd3; text-decoration: none; }
+            a:hover { text-decoration: underline; }
+            form, iframe { position: absolute; left: -10000px; width: 1px; height: 1px; border: 0; }
+          </style>
+          <div class="title">Maintenance Notes</div>
+          <label for="category">Work Category</label>
+          <select id="category" required>
+            <option value="" selected disabled>Select work category</option>
+            ${CATEGORIES.map(category => `<option value="${category}">${category}</option>`).join('')}
+          </select>
+          <input id="note" type="text" placeholder="Optional note/context here" autocomplete="off">
+          <button id="save" class="save" type="button">Save</button>
+          <div id="pipStatus" class="status" role="status" aria-live="polite"></div>
+          <div class="footer"><a href="${LOG_URL}" target="_blank" rel="noopener">Maintenance Notes Log</a></div>
+          <iframe id="responseFrame" name="maintenanceWorkLogResponse" title="Submission response"></iframe>
+          <form id="submitForm" method="post" target="maintenanceWorkLogResponse" action="${ENDPOINT}">
+            <input name="email" type="hidden">
+            <input name="category" type="hidden">
+            <input name="note" type="hidden">
+            <input name="submissionId" type="hidden">
+          </form>
+        `;
 
-      i.focus();
-      statusEl.innerHTML = '<span class="ok">PiP opened.</span>';
-    } catch (e) {
-      statusEl.innerHTML = '<span class="err">PiP failed: ' + (e && e.message ? e.message : e) + '</span>';
-      console.error(e);
-    }
-  };
-})();
-</script>
+        const doc = pip.document;
+        const categoryInput = doc.getElementById('category');
+        const noteInput = doc.getElementById('note');
+        const saveButton = doc.getElementById('save');
+        const pipStatus = doc.getElementById('pipStatus');
+        const form = doc.getElementById('submitForm');
+        const responseFrame = doc.getElementById('responseFrame');
+        let pendingKey = '';
+        let pendingId = '';
+        let timer = null;
+
+        function setStatus(message, kind = '') {
+          pipStatus.textContent = message;
+          pipStatus.className = `status ${kind}`;
+        }
+
+        pip.addEventListener('message', event => {
+          if (event.source !== responseFrame.contentWindow) return;
+          const message = event.data;
+          if (!message || message.channel !== 'maintenance-work-log' || message.submissionId !== pendingId) return;
+          clearTimeout(timer);
+          saveButton.disabled = false;
+          if (message.success) {
+            categoryInput.value = '';
+            noteInput.value = '';
+            pendingKey = '';
+            pendingId = '';
+            setStatus('Saved ✓', 'success');
+          } else {
+            setStatus(message.error || 'Could not save. Please try again.', 'error');
+          }
+        });
+
+        function submit() {
+          if (saveButton.disabled) return;
+          if (!CATEGORIES.includes(categoryInput.value)) {
+            setStatus('Please select a work category.', 'error');
+            categoryInput.focus();
+            return;
+          }
+
+          const emailValue = (localStorage.getItem(EMAIL_KEY) || '').trim();
+          if (!emailValue) {
+            setStatus('Save your work email on the launcher, then reopen PiP.', 'error');
+            return;
+          }
+
+          const values = { email: emailValue, category: categoryInput.value, note: noteInput.value };
+          const key = JSON.stringify(values);
+          if (key !== pendingKey) {
+            pendingKey = key;
+            pendingId = `mn-${Date.now().toString(36)}-${crypto.randomUUID()}`;
+          }
+
+          form.elements.email.value = values.email;
+          form.elements.category.value = values.category;
+          form.elements.note.value = values.note;
+          form.elements.submissionId.value = pendingId;
+          saveButton.disabled = true;
+          setStatus('Saving…');
+          timer = setTimeout(() => {
+            saveButton.disabled = false;
+            setStatus('No confirmation received. Your entry is still here; click Save to retry.', 'error');
+          }, 20000);
+          form.submit();
+        }
+
+        saveButton.addEventListener('click', submit);
+        noteInput.addEventListener('keydown', event => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            submit();
+          }
+        });
+        noteInput.focus();
+        status.className = 'status ok';
+        status.textContent = 'PiP opened.';
+      } catch (error) {
+        status.className = 'status err';
+        status.textContent = `PiP failed: ${error && error.message ? error.message : error}`;
+      }
+    });
+  })();
+  </script>
 </body>
 </html>
