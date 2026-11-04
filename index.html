@@ -140,7 +140,7 @@
         }
 
         pip.addEventListener('message', event => {
-          if (event.source !== responseFrame.contentWindow) return;
+          const responseHost = new URL(event.origin).hostname; if (responseHost !== 'script.google.com' && responseHost !== 'script.googleusercontent.com' && !responseHost.endsWith('.googleusercontent.com')) return;
           const message = event.data;
           if (!message || message.channel !== 'maintenance-work-log' || message.submissionId !== pendingId) return;
           clearTimeout(timer);
