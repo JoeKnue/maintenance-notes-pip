@@ -140,7 +140,7 @@
         }
 
         pip.addEventListener('message', event => {
-          const responseHost = new URL(event.origin).hostname; if (responseHost !== 'script.google.com' && responseHost !== 'script.googleusercontent.com' && !responseHost.endsWith('.googleusercontent.com')) return;
+          // Correlate the server acknowledgment with the random submission ID.
           const message = event.data;
           if (!message || message.channel !== 'maintenance-work-log' || message.submissionId !== pendingId) return;
           clearTimeout(timer);
