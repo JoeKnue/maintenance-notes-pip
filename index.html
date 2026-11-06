@@ -153,11 +153,11 @@
           pipStatus.className = `status ${kind}`;
         }
 
-        function renderLastCategory(record) {
+        function renderLastCategory(record, emptyLabel = 'Last selected: none recorded on this browser') {
           clearTimeout(ageTimer);
           const savedAt = Number(record && record.savedAt);
           if (!record || !CATEGORIES.includes(record.category) || !Number.isFinite(savedAt) || savedAt <= 0) {
-            recentCategory.textContent = 'Last selected: none recorded on this browser';
+            recentCategory.textContent = emptyLabel;
             recentAge.textContent = '';
             return;
           }
@@ -186,6 +186,26 @@
           lastCategoryRecord = null;
         }
         renderLastCategory(lastCategoryRecord);
+
+        const latestRequestId = `latest-${crypto.randomUUID()}`;
+        pip.addEventListener('message', event => {
+          const message = event.data;
+          if (!message || message.channel !== 'maintenance-work-log-latest' || message.requestId !== latestRequestId) return;
+          if (!message.success) {
+            if (!lastCategoryRecord) {
+              recentCategory.textContent = 'Could not load the previous category';
+              recentAge.textContent = message.error || 'Please try again when you reopen PiP.';
+            }
+            return;
+          }
+
+          lastCategoryRecord = message.record || null;
+          if (lastCategoryRecord) {
+            localStorage.setItem(lastCategoryStorageKey(activeEmail), JSON.stringify(lastCategoryRecord));
+          }
+          renderLastCategory(lastCategoryRecord, 'No previous category recorded for this email');
+        });
+        responseFrame.src = `${ENDPOINT}?action=latestCategory&email=${encodeURIComponent(email)}&requestId=${encodeURIComponent(latestRequestId)}`;
 
         pip.addEventListener('message', event => {
           // Correlate the server acknowledgment with the random submission ID.
