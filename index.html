@@ -42,6 +42,7 @@
     const ENDPOINT = 'https://script.google.com/a/macros/flyzipline.com/s/AKfycbyGlhqRheRLiv6Bs_mwGh3tqTCXmqZre8BBj64jfzah5hB7u_0_HxEQrFNDpgKMLecu/exec';
     const LOG_URL = 'https://docs.google.com/spreadsheets/d/1BqsZaYJZdaaiwQZV9yx5zqtk45jYxl1R1-0V8166_J8/edit';
     const EMAIL_KEY = 'mn_email';
+    const LAST_CATEGORY_PREFIX = 'mn_last_category:';
     const CATEGORIES = [
       'Productive wrench time',
       'Zip Retrieval / Preparation',
@@ -84,7 +85,7 @@
       }
 
       try {
-        const pip = await documentPictureInPicture.requestWindow({ width: 390, height: 330 });
+        const pip = await documentPictureInPicture.requestWindow({ width: 390, height: 360 });
         pip.document.body.innerHTML = `
           <style>
             :root { color-scheme: light; font: 13px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
@@ -99,7 +100,10 @@
             .status { min-height: 16px; margin-top: 5px; font-size: 12px; }
             .error { color: #b42318; }
             .success { color: #087443; }
-            .footer { margin-top: 7px; font-size: 12px; }
+            .recent { margin-top: 5px; padding-top: 5px; border-top: 1px solid #e4e7ec; }
+            .recent-category { font-size: 12px; font-weight: 650; }
+            .recent-age { margin-top: 2px; color: #667085; font-size: 11px; }
+            .footer { margin-top: 6px; font-size: 12px; }
             a { color: #175cd3; text-decoration: none; }
             a:hover { text-decoration: underline; }
             form, iframe { position: absolute; left: -10000px; width: 1px; height: 1px; border: 0; }
@@ -113,6 +117,10 @@
           <input id="note" type="text" placeholder="Optional note/context here" autocomplete="off">
           <button id="save" class="save" type="button">Save</button>
           <div id="pipStatus" class="status" role="status" aria-live="polite"></div>
+          <div class="recent" aria-live="polite">
+            <div id="recentCategory" class="recent-category">Last selected: none recorded on this browser</div>
+            <div id="recentAge" class="recent-age"></div>
+          </div>
           <div class="footer"><a href="${LOG_URL}" target="_blank" rel="noopener">Google Sheet Log</a></div>
           <iframe id="responseFrame" name="maintenanceWorkLogResponse" title="Submission response"></iframe>
           <form id="submitForm" method="post" target="maintenanceWorkLogResponse" action="${ENDPOINT}">
@@ -128,16 +136,56 @@
         const noteInput = doc.getElementById('note');
         const saveButton = doc.getElementById('save');
         const pipStatus = doc.getElementById('pipStatus');
+        const recentCategory = doc.getElementById('recentCategory');
+        const recentAge = doc.getElementById('recentAge');
         const form = doc.getElementById('submitForm');
         const responseFrame = doc.getElementById('responseFrame');
+        const lastCategoryStorageKey = emailValue => `${LAST_CATEGORY_PREFIX}${emailValue.trim().toLowerCase()}`;
+        let activeEmail = email;
         let pendingKey = '';
         let pendingId = '';
+        let pendingValues = null;
         let timer = null;
+        let ageTimer = null;
 
         function setStatus(message, kind = '') {
           pipStatus.textContent = message;
           pipStatus.className = `status ${kind}`;
         }
+
+        function renderLastCategory(record) {
+          clearTimeout(ageTimer);
+          const savedAt = Number(record && record.savedAt);
+          if (!record || !CATEGORIES.includes(record.category) || !Number.isFinite(savedAt) || savedAt <= 0) {
+            recentCategory.textContent = 'Last selected: none recorded on this browser';
+            recentAge.textContent = '';
+            return;
+          }
+
+          recentCategory.textContent = `Last selected: ${record.category}`;
+          const centralTime = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'America/Chicago',
+            month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short'
+          }).format(new Date(savedAt));
+
+          function updateAge() {
+            const elapsed = Math.max(0, Date.now() - savedAt);
+            const minutes = Math.floor(elapsed / 60000);
+            const relative = minutes === 0 ? 'less than 1 min ago' : `${minutes} min ago`;
+            recentAge.textContent = `${relative} · ${centralTime}`;
+            ageTimer = setTimeout(updateAge, 60000 - (elapsed % 60000) + 20);
+          }
+
+          updateAge();
+        }
+
+        let lastCategoryRecord = null;
+        try {
+          lastCategoryRecord = JSON.parse(localStorage.getItem(lastCategoryStorageKey(activeEmail)) || 'null');
+        } catch (_) {
+          lastCategoryRecord = null;
+        }
+        renderLastCategory(lastCategoryRecord);
 
         pip.addEventListener('message', event => {
           // Correlate the server acknowledgment with the random submission ID.
@@ -146,10 +194,16 @@
           clearTimeout(timer);
           saveButton.disabled = false;
           if (message.success) {
+            if (message.category && message.savedAt && pendingValues && CATEGORIES.includes(message.category)) {
+              lastCategoryRecord = { category: message.category, savedAt: Number(message.savedAt) };
+              localStorage.setItem(lastCategoryStorageKey(pendingValues.email), JSON.stringify(lastCategoryRecord));
+              renderLastCategory(lastCategoryRecord);
+            }
             categoryInput.value = '';
             noteInput.value = '';
             pendingKey = '';
             pendingId = '';
+            pendingValues = null;
             setStatus('Saved ✓', 'success');
           } else {
             setStatus(message.error || 'Could not save. Please try again.', 'error');
@@ -170,12 +224,23 @@
             return;
           }
 
+          if (emailValue.toLowerCase() !== activeEmail.toLowerCase()) {
+            activeEmail = emailValue;
+            try {
+              lastCategoryRecord = JSON.parse(localStorage.getItem(lastCategoryStorageKey(activeEmail)) || 'null');
+            } catch (_) {
+              lastCategoryRecord = null;
+            }
+            renderLastCategory(lastCategoryRecord);
+          }
+
           const values = { email: emailValue, category: categoryInput.value, note: noteInput.value };
           const key = JSON.stringify(values);
           if (key !== pendingKey) {
             pendingKey = key;
             pendingId = `mn-${Date.now().toString(36)}-${crypto.randomUUID()}`;
           }
+          pendingValues = values;
 
           form.elements.email.value = values.email;
           form.elements.category.value = values.category;
