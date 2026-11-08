@@ -42,7 +42,7 @@
     const ENDPOINT = 'https://script.google.com/a/macros/flyzipline.com/s/AKfycbyGlhqRheRLiv6Bs_mwGh3tqTCXmqZre8BBj64jfzah5hB7u_0_HxEQrFNDpgKMLecu/exec';
     const LOG_URL = 'https://docs.google.com/spreadsheets/d/1BqsZaYJZdaaiwQZV9yx5zqtk45jYxl1R1-0V8166_J8/edit';
     const EMAIL_KEY = 'mn_email';
-    const LAST_CATEGORY_PREFIX = 'mn_last_category:';
+    const LAST_CATEGORY_PREFIX = 'mn_last_category:'; const SHIFT_ENDED_CATEGORY = 'SHIFT ENDED';
     const CATEGORIES = [
       'Productive wrench time',
       'Zip Retrieval / Preparation',
@@ -103,7 +103,7 @@
             .recent { margin-top: 5px; padding-top: 5px; border-top: 1px solid #e4e7ec; }
             .recent-category { font-size: 12px; font-weight: 650; }
             .recent-age { margin-top: 2px; color: #667085; font-size: 11px; }
-            .footer { margin-top: 6px; font-size: 12px; }
+            .footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; font-size: 12px; } .end-shift { flex: 0 0 auto; padding: 5px 9px; border: 1px solid #b42318; border-radius: 6px; background: white; color: #b42318; font: inherit; font-weight: 650; cursor: pointer; } .end-shift:disabled { border-color: #d0d5dd; background: #eaecf0; color: #667085; cursor: not-allowed; }
             a { color: #175cd3; text-decoration: none; }
             a:hover { text-decoration: underline; }
             form, iframe { position: absolute; left: -10000px; width: 1px; height: 1px; border: 0; }
@@ -121,7 +121,7 @@
             <div id="recentCategory" class="recent-category">Last selected: none recorded on this browser</div>
             <div id="recentAge" class="recent-age"></div>
           </div>
-          <div class="footer"><a href="${LOG_URL}" target="_blank" rel="noopener">Google Sheet Log</a></div>
+          <div class="footer"><a href="${LOG_URL}" target="_blank" rel="noopener">Google Sheet Log</a><button id="endShift" class="end-shift" type="button" disabled>End Shift</button></div>
           <iframe id="responseFrame" name="maintenanceWorkLogResponse" title="Submission response"></iframe>
           <form id="submitForm" method="post" target="maintenanceWorkLogResponse" action="${ENDPOINT}">
             <input name="email" type="hidden">
@@ -134,7 +134,7 @@
         const doc = pip.document;
         const categoryInput = doc.getElementById('category');
         const noteInput = doc.getElementById('note');
-        const saveButton = doc.getElementById('save');
+        const saveButton = doc.getElementById('save'); const endShiftButton = doc.getElementById('endShift'); const endShiftButton = doc.getElementById('endShift');
         const pipStatus = doc.getElementById('pipStatus');
         const recentCategory = doc.getElementById('recentCategory');
         const recentAge = doc.getElementById('recentAge');
@@ -146,19 +146,19 @@
         let pendingId = '';
         let pendingValues = null;
         let timer = null;
-        let ageTimer = null;
+        let ageTimer = null; let latestCategoryRequestId = ''; let latestStatusKnown = false; let submissionInProgress = false; let latestCategoryRequestId = ''; let latestStatusKnown = false; let submissionInProgress = false;
 
         function setStatus(message, kind = '') {
           pipStatus.textContent = message;
           pipStatus.className = `status ${kind}`;
         }
 
-        function renderLastCategory(record, emptyLabel = 'Last selected: none recorded on this browser') {
+        function updateEndShiftAvailability() { saveButton.disabled = submissionInProgress; endShiftButton.disabled = submissionInProgress || !latestStatusKnown || !lastCategoryRecord || !CATEGORIES.includes(lastCategoryRecord.category); } function updateEndShiftAvailability() { saveButton.disabled = submissionInProgress; endShiftButton.disabled = submissionInProgress || !latestStatusKnown || !lastCategoryRecord || !CATEGORIES.includes(lastCategoryRecord.category); } function renderLastCategory(record, emptyLabel = 'Last selected: none recorded on this browser') {
           clearTimeout(ageTimer);
           const savedAt = Number(record && record.savedAt);
-          if (!record || !CATEGORIES.includes(record.category) || !Number.isFinite(savedAt) || savedAt <= 0) {
+          if (!record || (!CATEGORIES.includes(record.category) && record.category !== SHIFT_ENDED_CATEGORY) || !Number.isFinite(savedAt) || savedAt <= 0) {
             recentCategory.textContent = emptyLabel;
-            recentAge.textContent = '';
+            recentAge.textContent = ''; updateEndShiftAvailability(); updateEndShiftAvailability();
             return;
           }
 
@@ -176,7 +176,7 @@
             ageTimer = setTimeout(updateAge, 60000 - (elapsed % 60000) + 20);
           }
 
-          updateAge();
+          updateAge(); updateEndShiftAvailability(); updateEndShiftAvailability();
         }
 
         let lastCategoryRecord = null;
@@ -187,11 +187,11 @@
         }
         renderLastCategory(lastCategoryRecord);
 
-        const latestRequestId = `latest-${crypto.randomUUID()}`;
+        function loadLatestCategory(emailValue) { latestStatusKnown = false; updateEndShiftAvailability(); latestCategoryRequestId = `latest-${crypto.randomUUID()}`; responseFrame.src = `${ENDPOINT}?action=latestCategory&email=${encodeURIComponent(emailValue)}&requestId=${encodeURIComponent(latestCategoryRequestId)}`; }
         pip.addEventListener('message', event => {
           const message = event.data;
-          if (!message || message.channel !== 'maintenance-work-log-latest' || message.requestId !== latestRequestId) return;
-          if (!message.success) {
+          if (!message || message.channel !== 'maintenance-work-log-latest' || message.requestId !== latestCategoryRequestId) return;
+          if (!message.success) { latestStatusKnown = false; updateEndShiftAvailability(); latestStatusKnown = false; updateEndShiftAvailability();
             if (!lastCategoryRecord) {
               recentCategory.textContent = 'Could not load the previous category';
               recentAge.textContent = message.error || 'Please try again when you reopen PiP.';
@@ -199,22 +199,22 @@
             return;
           }
 
-          lastCategoryRecord = message.record || null;
+          lastCategoryRecord = message.record || null; latestStatusKnown = true; latestStatusKnown = true;
           if (lastCategoryRecord) {
             localStorage.setItem(lastCategoryStorageKey(activeEmail), JSON.stringify(lastCategoryRecord));
           }
           renderLastCategory(lastCategoryRecord, 'No previous category recorded for this email');
         });
-        responseFrame.src = `${ENDPOINT}?action=latestCategory&email=${encodeURIComponent(email)}&requestId=${encodeURIComponent(latestRequestId)}`;
+        loadLatestCategory(email);
 
         pip.addEventListener('message', event => {
           // Correlate the server acknowledgment with the random submission ID.
           const message = event.data;
           if (!message || message.channel !== 'maintenance-work-log' || message.submissionId !== pendingId) return;
           clearTimeout(timer);
-          saveButton.disabled = false;
+          submissionInProgress = false; updateEndShiftAvailability();
           if (message.success) {
-            if (message.category && message.savedAt && pendingValues && CATEGORIES.includes(message.category)) {
+            if (message.category && message.savedAt && pendingValues && (CATEGORIES.includes(message.category) || message.category === SHIFT_ENDED_CATEGORY)) {
               lastCategoryRecord = { category: message.category, savedAt: Number(message.savedAt) };
               localStorage.setItem(lastCategoryStorageKey(pendingValues.email), JSON.stringify(lastCategoryRecord));
               renderLastCategory(lastCategoryRecord);
@@ -230,9 +230,9 @@
           }
         });
 
-        function submit() {
+        function submit(categoryOverride = '') { if (submissionInProgress) return; const category = categoryOverride || categoryInput.value; if (categoryOverride === SHIFT_ENDED_CATEGORY && (!latestStatusKnown || !lastCategoryRecord || !CATEGORIES.includes(lastCategoryRecord.category) || activeEmail.toLowerCase() !== (localStorage.getItem(EMAIL_KEY) || '').trim().toLowerCase())) { setStatus('End Shift is available after a work category has been saved for this email.', 'error'); return; }
           if (saveButton.disabled) return;
-          if (!CATEGORIES.includes(categoryInput.value)) {
+          if (!categoryOverride && !CATEGORIES.includes(category)) {
             setStatus('Please select a work category.', 'error');
             categoryInput.focus();
             return;
@@ -254,7 +254,7 @@
             renderLastCategory(lastCategoryRecord);
           }
 
-          const values = { email: emailValue, category: categoryInput.value, note: noteInput.value };
+          const values = { email: emailValue, category: category, note: categoryOverride ? '' : noteInput.value };
           const key = JSON.stringify(values);
           if (key !== pendingKey) {
             pendingKey = key;
@@ -263,19 +263,19 @@
           pendingValues = values;
 
           form.elements.email.value = values.email;
-          form.elements.category.value = values.category;
+          form.elements.category.value = values.category; latestCategoryRequestId = ''; submissionInProgress = true; updateEndShiftAvailability();
           form.elements.note.value = values.note;
           form.elements.submissionId.value = pendingId;
-          saveButton.disabled = true;
+          submissionInProgress = true; updateEndShiftAvailability();
           setStatus('Saving…');
           timer = setTimeout(() => {
-            saveButton.disabled = false;
+            submissionInProgress = false; updateEndShiftAvailability();
             setStatus('No confirmation received. Your entry is still here; click Save to retry.', 'error');
           }, 20000);
           form.submit();
         }
 
-        saveButton.addEventListener('click', submit);
+        saveButton.addEventListener('click', () => submit()); endShiftButton.addEventListener('click', () => submit(SHIFT_ENDED_CATEGORY));
         noteInput.addEventListener('keydown', event => {
           if (event.key === 'Enter') {
             event.preventDefault();
