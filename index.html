@@ -275,7 +275,7 @@
           form.submit();
         }
 
-        saveButton.addEventListener('click', () => submit()); endShiftButton.addEventListener('click', () => submit(SHIFT_ENDED_CATEGORY)); stillWorkingButton.addEventListener('click', () => { if (stillWorkingButton.disabled) return; localStorage.setItem(reminderAckStorageKey(activeEmail), String(Date.now())); reminderSoundPlayed = false; updateReminderState(); setStatus('Thanks — the reminder will return in 15 minutes.', 'success'); }); pip.addEventListener('focus', updateReminderState); pip.document.addEventListener('visibilitychange', updateReminderState);
+        saveButton.addEventListener('click', () => submit()); endShiftButton.addEventListener('click', () => submit(SHIFT_ENDED_CATEGORY)); function acknowledgeStillWorking() { if (stillWorkingButton.disabled) return; localStorage.setItem(reminderAckStorageKey(activeEmail), String(Date.now())); reminderSoundPlayed = false; updateReminderState(); setStatus('Thanks — the reminder will return in 15 minutes.', 'success'); } stillWorkingButton.addEventListener('click', acknowledgeStillWorking); pip.document.addEventListener('keydown', event => { if (event.key !== 'Escape' || stillWorkingButton.disabled) return; event.preventDefault(); acknowledgeStillWorking(); }); pip.addEventListener('focus', updateReminderState); pip.document.addEventListener('visibilitychange', updateReminderState);
         noteInput.addEventListener('keydown', event => {
           if (event.key === 'Enter') {
             event.preventDefault();
