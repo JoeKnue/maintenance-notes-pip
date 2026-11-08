@@ -213,7 +213,7 @@
           if (!message || message.channel !== 'maintenance-work-log' || message.submissionId !== pendingId) return;
           clearTimeout(timer);
           submissionInProgress = false; updateEndShiftAvailability();
-          if (message.success) {
+          if (message.success) { latestStatusKnown = true;
             if (message.category && message.savedAt && pendingValues && (CATEGORIES.includes(message.category) || message.category === SHIFT_ENDED_CATEGORY)) {
               lastCategoryRecord = { category: message.category, savedAt: Number(message.savedAt) };
               localStorage.setItem(lastCategoryStorageKey(pendingValues.email), JSON.stringify(lastCategoryRecord));
